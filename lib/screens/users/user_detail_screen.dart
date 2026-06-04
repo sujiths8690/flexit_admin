@@ -19,6 +19,7 @@ class _UserDetailScreenState extends ConsumerState<UserDetailScreen>
     with TickerProviderStateMixin {
   late TabController _tabCtrl;
   late Customer _customer;
+  RequestAnalytics _requestAnalytics = const RequestAnalytics();
 
   @override
   void initState() {
@@ -38,10 +39,17 @@ class _UserDetailScreenState extends ConsumerState<UserDetailScreen>
 
   Future<void> _loadDetails() async {
     try {
-      final nextCustomer =
-          await ref.read(adminAuthServiceProvider).fetchCustomerDetails(c);
+      final service = ref.read(adminAuthServiceProvider);
+      final nextCustomer = await service.fetchCustomerDetails(c);
+      RequestAnalytics nextAnalytics = _requestAnalytics;
+      try {
+        nextAnalytics = await service.fetchRequestAnalytics();
+      } catch (_) {}
       if (!mounted) return;
-      setState(() => _customer = nextCustomer);
+      setState(() {
+        _customer = nextCustomer;
+        _requestAnalytics = nextAnalytics;
+      });
     } catch (_) {}
   }
 
@@ -242,6 +250,7 @@ class _UserDetailScreenState extends ConsumerState<UserDetailScreen>
                 c: c,
                 isDark: isDark,
                 daysToPayment: daysToPayment,
+                apiDetails: _apiDetailsForCustomer(c),
                 onAction: _showActionSheet),
             _PaymentsTab(c: c, isDark: isDark),
             _DevicesTab(c: c, isDark: isDark),
@@ -264,6 +273,13 @@ class _UserDetailScreenState extends ConsumerState<UserDetailScreen>
               fontSize: 11, fontWeight: FontWeight.w600, color: color)),
     );
   }
+
+  UserRequestAnalytics? _apiDetailsForCustomer(Customer customer) {
+    for (final user in _requestAnalytics.users) {
+      if (user.id == 'user:${customer.id}') return user;
+    }
+    return null;
+  }
 }
 
 // ─── Overview Tab ──────────────────────────────────────────────────────────────
@@ -272,12 +288,14 @@ class _OverviewTab extends StatelessWidget {
   final Customer c;
   final bool isDark;
   final int daysToPayment;
+  final UserRequestAnalytics? apiDetails;
   final void Function(String) onAction;
 
   const _OverviewTab(
       {required this.c,
       required this.isDark,
       required this.daysToPayment,
+      required this.apiDetails,
       required this.onAction});
 
   @override
@@ -370,6 +388,8 @@ class _OverviewTab extends StatelessWidget {
                 value: '${c.totalUsageGB.toStringAsFixed(1)} GB'),
           ],
         ),
+        const SizedBox(height: 12),
+        _ApiDetailsDropdown(apiDetails: apiDetails, isDark: isDark),
         const SizedBox(height: 24),
         _OffersDropdown(offers: c.offers, isDark: isDark),
         const SizedBox(height: 24),
@@ -489,6 +509,193 @@ class _ActionGrid extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _ApiDetailsDropdown extends StatelessWidget {
+  final UserRequestAnalytics? apiDetails;
+  final bool isDark;
+
+  const _ApiDetailsDropdown({
+    required this.apiDetails,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = apiDetails?.total ?? 0;
+    return FxCard(
+      padding: EdgeInsets.zero,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: AppColors.info.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.api_rounded,
+              color: AppColors.info,
+              size: 20,
+            ),
+          ),
+          title: Text(
+            'Api Details',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: isDark ? AppColors.textPrimary : AppColors.textDark,
+            ),
+          ),
+          subtitle: Text(
+            total == 0
+                ? 'No gateway requests recorded'
+                : '${AppUtils.formatNumber(total)} request${total == 1 ? '' : 's'} till now',
+            style:
+                const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          children: [
+            if (apiDetails == null)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'No request data has been recorded for this user yet.',
+                  style:
+                      TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              )
+            else ...[
+              _ApiPeriodBlock(
+                title: 'Current Day',
+                period: apiDetails!.currentDay,
+                color: AppColors.info,
+              ),
+              const SizedBox(height: 10),
+              _ApiPeriodBlock(
+                title: 'Current Month',
+                period: apiDetails!.currentMonth,
+                color: AppColors.accent,
+              ),
+              const SizedBox(height: 10),
+              _ApiPeriodBlock(
+                title: 'Current Year',
+                period: apiDetails!.currentYear,
+                color: AppColors.warning,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ApiPeriodBlock extends StatelessWidget {
+  final String title;
+  final RequestAnalyticsPeriod period;
+  final Color color;
+
+  const _ApiPeriodBlock({
+    required this.title,
+    required this.period,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                period.bucket.isEmpty ? '-' : period.bucket,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (period.endpoints.isEmpty)
+            const Text(
+              'No requests',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            )
+          else
+            ...period.endpoints.map(
+              (endpoint) => _ApiRequestRow(endpoint: endpoint, color: color),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ApiRequestRow extends StatelessWidget {
+  final ApiRequestCount endpoint;
+  final Color color;
+
+  const _ApiRequestRow({
+    required this.endpoint,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              endpoint.endpoint,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              AppUtils.formatNumber(endpoint.count),
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

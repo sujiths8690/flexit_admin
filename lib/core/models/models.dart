@@ -85,6 +85,26 @@ class CustomerOffer {
   bool get isPlanExtension => type == 'PLAN_EXTENSION';
 }
 
+class MobileNotification {
+  final int id;
+  final String target;
+  final String? businessName;
+  final String title;
+  final String message;
+  final String category;
+  final DateTime sentAt;
+
+  const MobileNotification({
+    required this.id,
+    required this.target,
+    this.businessName,
+    required this.title,
+    required this.message,
+    required this.category,
+    required this.sentAt,
+  });
+}
+
 // ─── Device Model ─────────────────────────────────────────────────────────────
 
 class DeviceInfo {
@@ -269,6 +289,158 @@ class DashboardStats {
     required this.criticalErrors,
     required this.errorChangePercent,
   });
+}
+
+class ManagedPlan {
+  final String id;
+  final String name;
+  final String summary;
+  final int minTvDevices;
+  final int maxTvDevices;
+  final double amount;
+  final String currency;
+  final int? trialDays;
+  final List<String> features;
+  final String? discountName;
+  final double? discountAmount;
+  final DateTime? discountEndsAt;
+
+  const ManagedPlan({
+    required this.id,
+    required this.name,
+    required this.summary,
+    required this.minTvDevices,
+    required this.maxTvDevices,
+    required this.amount,
+    this.currency = 'INR',
+    this.trialDays,
+    this.features = const [],
+    this.discountName,
+    this.discountAmount,
+    this.discountEndsAt,
+  });
+
+  String get tvRangeLabel {
+    if (minTvDevices == maxTvDevices) return '$maxTvDevices TV';
+    return '$minTvDevices-$maxTvDevices TVs';
+  }
+
+  bool get hasActiveDiscount =>
+      discountName != null &&
+      discountAmount != null &&
+      discountAmount! < amount &&
+      (discountEndsAt == null || discountEndsAt!.isAfter(DateTime.now()));
+}
+
+class ApiRequestCount {
+  final String endpoint;
+  final int count;
+
+  const ApiRequestCount({
+    required this.endpoint,
+    required this.count,
+  });
+}
+
+class DangerousRequestUser {
+  final String id;
+  final String label;
+  final String role;
+  final int today;
+  final int month;
+  final int year;
+  final int total;
+  final DateTime? lastSeenAt;
+
+  const DangerousRequestUser({
+    required this.id,
+    required this.label,
+    required this.role,
+    required this.today,
+    required this.month,
+    required this.year,
+    required this.total,
+    this.lastSeenAt,
+  });
+}
+
+class UserRequestAnalytics {
+  final String id;
+  final String label;
+  final String role;
+  final int today;
+  final int month;
+  final int year;
+  final int total;
+  final DateTime? lastSeenAt;
+  final RequestAnalyticsPeriod currentDay;
+  final RequestAnalyticsPeriod currentMonth;
+  final RequestAnalyticsPeriod currentYear;
+
+  const UserRequestAnalytics({
+    required this.id,
+    required this.label,
+    required this.role,
+    required this.today,
+    required this.month,
+    required this.year,
+    required this.total,
+    this.lastSeenAt,
+    this.currentDay = const RequestAnalyticsPeriod(
+      bucket: '',
+      endpoints: [],
+    ),
+    this.currentMonth = const RequestAnalyticsPeriod(
+      bucket: '',
+      endpoints: [],
+    ),
+    this.currentYear = const RequestAnalyticsPeriod(
+      bucket: '',
+      endpoints: [],
+    ),
+  });
+}
+
+class RequestAnalyticsPeriod {
+  final String bucket;
+  final List<ApiRequestCount> endpoints;
+
+  const RequestAnalyticsPeriod({
+    required this.bucket,
+    required this.endpoints,
+  });
+}
+
+class RequestAnalytics {
+  final DateTime? generatedAt;
+  final int totalRequests;
+  final RequestAnalyticsPeriod currentDay;
+  final RequestAnalyticsPeriod currentMonth;
+  final RequestAnalyticsPeriod currentYear;
+  final List<DangerousRequestUser> dangerousUsers;
+  final List<UserRequestAnalytics> users;
+
+  const RequestAnalytics({
+    this.generatedAt,
+    this.totalRequests = 0,
+    this.currentDay = const RequestAnalyticsPeriod(
+      bucket: '',
+      endpoints: [],
+    ),
+    this.currentMonth = const RequestAnalyticsPeriod(
+      bucket: '',
+      endpoints: [],
+    ),
+    this.currentYear = const RequestAnalyticsPeriod(
+      bucket: '',
+      endpoints: [],
+    ),
+    this.dangerousUsers = const [],
+    this.users = const [],
+  });
+
+  int get todayTotal =>
+      currentDay.endpoints.fold(0, (sum, item) => sum + item.count);
 }
 
 class DashboardChartData {

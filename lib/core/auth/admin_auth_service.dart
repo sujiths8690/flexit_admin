@@ -303,6 +303,166 @@ class AdminAuthService {
     );
   }
 
+  Future<List<ManagedPlan>> fetchManagedPlans() async {
+    final response = await http.get(
+      Uri.parse('$contentDeviceBaseUrl/../business/plans').normalizePath(),
+      headers: _authHeaders(),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to load plans'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    final rawPlans = payload['plans'] as List<dynamic>? ?? const [];
+    return rawPlans
+        .map((item) => _managedPlanFromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<RequestAnalytics> fetchRequestAnalytics() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/request-analytics'),
+      headers: _authHeaders(),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to load request analytics'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    return _requestAnalyticsFromJson(payload);
+  }
+
+  Future<List<ManagedPlan>> updateManagedPlanPrices(
+    Map<String, double> prices,
+  ) async {
+    final response = await http.patch(
+      Uri.parse('$contentDeviceBaseUrl/../business/admin/plans/prices')
+          .normalizePath(),
+      headers: _authHeaders(),
+      body: jsonEncode({'prices': prices}),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to update plan prices'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    final rawPlans = payload['plans'] as List<dynamic>? ?? const [];
+    return rawPlans
+        .map((item) => _managedPlanFromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<ManagedPlan>> updateManagedPlanDiscount({
+    required String name,
+    required DateTime validUntil,
+    required Map<String, double> prices,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$contentDeviceBaseUrl/../business/admin/plans/discount')
+          .normalizePath(),
+      headers: _authHeaders(),
+      body: jsonEncode({
+        'name': name,
+        'validUntil': validUntil.toIso8601String(),
+        'prices': prices,
+      }),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to save plan discount'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    final rawPlans = payload['plans'] as List<dynamic>? ?? const [];
+    return rawPlans
+        .map((item) => _managedPlanFromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<MobileNotification>> fetchMobileNotifications() async {
+    final response = await http.get(
+      Uri.parse('$contentDeviceBaseUrl/../business/admin/notifications')
+          .normalizePath(),
+      headers: _authHeaders(),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to load notifications'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    final rawNotifications =
+        payload['notifications'] as List<dynamic>? ?? const [];
+    return rawNotifications
+        .map((item) =>
+            _mobileNotificationFromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<MobileNotification> sendMobileNotification({
+    String title = '',
+    required String message,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$contentDeviceBaseUrl/../business/admin/notifications')
+          .normalizePath(),
+      headers: _authHeaders(),
+      body: jsonEncode({
+        'title': title.trim(),
+        'message': message.trim(),
+      }),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to send notification'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    return _mobileNotificationFromJson(
+      payload['notification'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<MobileNotification> resendMobileNotification(int id) async {
+    final response = await http.post(
+      Uri.parse('$contentDeviceBaseUrl/../business/admin/notifications/$id/resend')
+          .normalizePath(),
+      headers: _authHeaders(),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to resend notification'));
+    }
+
+    final payload = data['data'] as Map<String, dynamic>? ?? const {};
+    return _mobileNotificationFromJson(
+      payload['notification'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteMobileNotification(int id) async {
+    final response = await http.delete(
+      Uri.parse('$contentDeviceBaseUrl/../business/admin/notifications/$id')
+          .normalizePath(),
+      headers: _authHeaders(),
+    );
+
+    final data = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_errorMessage(data, 'Failed to delete notification'));
+    }
+  }
+
   Future<List<ErrorRecord>> fetchErrors() async {
     final response = await http.get(Uri.parse(errorBaseUrl));
     final data = _decode(response);
@@ -540,6 +700,90 @@ class AdminAuthService {
       createdById: json['createdById']?.toString(),
       lastLoginAt: DateTime.tryParse(json['lastLoginAt']?.toString() ?? ''),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
+    );
+  }
+
+  ManagedPlan _managedPlanFromJson(Map<String, dynamic> json) {
+    return ManagedPlan(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Plan',
+      summary: json['summary']?.toString() ?? '',
+      minTvDevices: _intValue(json['minTvDevices']),
+      maxTvDevices: _intValue(json['maxTvDevices']),
+      amount: _doubleValue(json['amount']),
+      currency: json['currency']?.toString() ?? 'INR',
+      trialDays: _nullableInt(json['trialDays']),
+      features: (json['features'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .toList(),
+      discountName: json['discountName']?.toString(),
+      discountAmount: _nullableDouble(json['discountAmount']),
+      discountEndsAt:
+          DateTime.tryParse(json['discountEndsAt']?.toString() ?? ''),
+    );
+  }
+
+  RequestAnalytics _requestAnalyticsFromJson(Map<String, dynamic> json) {
+    return RequestAnalytics(
+      generatedAt: DateTime.tryParse(json['generatedAt']?.toString() ?? ''),
+      totalRequests: _intValue(json['totalRequests']),
+      currentDay: _requestPeriodFromJson(json['currentDay']),
+      currentMonth: _requestPeriodFromJson(json['currentMonth']),
+      currentYear: _requestPeriodFromJson(json['currentYear']),
+      dangerousUsers: (json['dangerousUsers'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(_dangerousRequestUserFromJson)
+          .toList(),
+      users: (json['users'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(_userRequestAnalyticsFromJson)
+          .toList(),
+    );
+  }
+
+  RequestAnalyticsPeriod _requestPeriodFromJson(dynamic value) {
+    final json =
+        value is Map<String, dynamic> ? value : const <String, dynamic>{};
+    return RequestAnalyticsPeriod(
+      bucket: json['bucket']?.toString() ?? '',
+      endpoints: (json['endpoints'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((item) => ApiRequestCount(
+                endpoint: item['endpoint']?.toString() ?? 'Unknown API',
+                count: _intValue(item['count']),
+              ))
+          .toList(),
+    );
+  }
+
+  DangerousRequestUser _dangerousRequestUserFromJson(
+      Map<String, dynamic> json) {
+    return DangerousRequestUser(
+      id: json['id']?.toString() ?? '',
+      label: json['label']?.toString() ?? 'Unknown user',
+      role: json['role']?.toString() ?? 'UNKNOWN',
+      today: _intValue(json['today']),
+      month: _intValue(json['month']),
+      year: _intValue(json['year']),
+      total: _intValue(json['total']),
+      lastSeenAt: DateTime.tryParse(json['lastSeenAt']?.toString() ?? ''),
+    );
+  }
+
+  UserRequestAnalytics _userRequestAnalyticsFromJson(
+      Map<String, dynamic> json) {
+    return UserRequestAnalytics(
+      id: json['id']?.toString() ?? '',
+      label: json['label']?.toString() ?? 'Unknown user',
+      role: json['role']?.toString() ?? 'UNKNOWN',
+      today: _intValue(json['today']),
+      month: _intValue(json['month']),
+      year: _intValue(json['year']),
+      total: _intValue(json['total']),
+      lastSeenAt: DateTime.tryParse(json['lastSeenAt']?.toString() ?? ''),
+      currentDay: _requestPeriodFromJson(json['currentDay']),
+      currentMonth: _requestPeriodFromJson(json['currentMonth']),
+      currentYear: _requestPeriodFromJson(json['currentYear']),
     );
   }
 
@@ -898,6 +1142,19 @@ class AdminAuthService {
         'Created At': json['createdAt'],
         'Updated At': json['updatedAt'],
       }),
+    );
+  }
+
+  MobileNotification _mobileNotificationFromJson(Map<String, dynamic> json) {
+    return MobileNotification(
+      id: _intValue(json['id']),
+      target: json['target']?.toString() ?? 'ALL',
+      businessName: json['businessName']?.toString(),
+      title: json['title']?.toString() ?? 'teX notification',
+      message: json['message']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'GENERAL',
+      sentAt: DateTime.tryParse(json['sentAt']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 

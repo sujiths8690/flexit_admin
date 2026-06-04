@@ -17,6 +17,7 @@ import '../../screens/users/user_detail_screen.dart';
 import '../../screens/devices/devices_screen.dart';
 import '../../screens/income/income_screen.dart';
 import '../../screens/errors/errors_screen.dart';
+import '../../screens/notifications/notifications_screen.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../widgets/common/common_widgets.dart';
 import '../../widgets/dashboard/stat_card.dart';
@@ -35,6 +36,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Timer? _statsRefreshTimer;
   Timer? _liveReloadDebounce;
   WebSocket? _adminSocket;
+  static const _fallbackRefreshInterval = Duration(minutes: 2);
+  _DashboardRefreshRequest _pendingLiveRefresh =
+      const _DashboardRefreshRequest.none();
+  List<Customer> _dashboardUsers = const [];
+  List<DeviceInfo> _dashboardDevices = const [];
+  RevenueOverview _dashboardRevenue = const RevenueOverview(
+    totalRevenue: 0,
+    revenueThisMonth: 0,
+    transactions: [],
+  );
+  List<ErrorRecord> _dashboardErrors = const [];
+  List<DashboardActivity> _dashboardActivities = const [];
+  RequestAnalytics _requestAnalytics = const RequestAnalytics();
   DashboardChartData chartData = const DashboardChartData(
     labels: ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'],
     revenue: [0, 0, 0, 0, 0, 0, 0, 0],
@@ -77,7 +91,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _loadDashboardData();
     _connectAdminSocket();
     _statsRefreshTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      _fallbackRefreshInterval,
       (_) => _loadDashboardData(),
     );
   }
@@ -105,30 +119,44 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (mounted) unawaited(_loadDashboardData());
   }
 
-  Future<void> _loadDashboardData() async {
+  Future<void> _loadDashboardData({
+    bool refreshUserSummary = true,
+    bool refreshUsers = true,
+    bool refreshDevices = true,
+    bool refreshRevenue = true,
+    bool refreshErrors = true,
+    bool refreshActivities = true,
+    bool refreshAdmins = true,
+    bool refreshRequestAnalytics = true,
+  }) async {
     final service = ref.read(adminAuthServiceProvider);
     var nextStats = stats;
-    var users = <Customer>[];
-    var devices = <DeviceInfo>[];
-    var revenue = const RevenueOverview(
-      totalRevenue: 0,
-      revenueThisMonth: 0,
-      transactions: [],
-    );
-    var errors = <ErrorRecord>[];
-    var activities = <DashboardActivity>[];
+    var users = _dashboardUsers;
+    var devices = _dashboardDevices;
+    var revenue = _dashboardRevenue;
+    var errors = _dashboardErrors;
+    var activities = _dashboardActivities;
     var nextAdminCount = adminCount;
 
-    try {
-      nextStats = await service.fetchUserSummary(nextStats);
-    } catch (_) {}
+    if (refreshUserSummary) {
+      try {
+        nextStats = await service.fetchUserSummary(nextStats);
+      } catch (_) {}
+    }
 
-    try {
-      users = await service.fetchUsers();
-    } catch (_) {}
+    if (refreshUsers) {
+      try {
+        users = await service.fetchUsers();
+      } catch (_) {}
+    }
 
-    try {
-      devices = await service.fetchRegisteredDevices();
+    if (refreshDevices) {
+      try {
+        devices = await service.fetchRegisteredDevices();
+      } catch (_) {}
+    }
+
+    if (refreshDevices || refreshUsers) {
       final liveDevices = devices.where((device) => device.isOnline).length;
       nextStats = DashboardStats(
         totalUsers: nextStats.totalUsers,
@@ -149,10 +177,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         criticalErrors: nextStats.criticalErrors,
         errorChangePercent: nextStats.errorChangePercent,
       );
-    } catch (_) {}
+    }
 
-    try {
-      revenue = await service.fetchRevenueOverview();
+    if (refreshRevenue) {
+      try {
+        revenue = await service.fetchRevenueOverview();
+      } catch (_) {}
+    }
+
+    if (refreshRevenue) {
       nextStats = DashboardStats(
         totalUsers: nextStats.totalUsers,
         activeUsers: nextStats.activeUsers,
@@ -170,10 +203,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         criticalErrors: nextStats.criticalErrors,
         errorChangePercent: nextStats.errorChangePercent,
       );
-    } catch (_) {}
+    }
 
-    try {
-      errors = await service.fetchErrors();
+    if (refreshErrors) {
+      try {
+        errors = await service.fetchErrors();
+      } catch (_) {}
+    }
+
+    if (refreshErrors) {
       final openErrors = errors.where((error) => error.status == 'open').length;
       final criticalErrors =
           errors.where((error) => error.severity == 'critical').length;
@@ -195,16 +233,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         errorChangePercent:
             _periodGrowth(errors.map((error) => error.timestamp).toList()),
       );
-    } catch (_) {}
+    }
 
-    try {
-      activities = await service.fetchUserActivities();
-    } catch (_) {}
+    if (refreshActivities) {
+      try {
+        activities = await service.fetchUserActivities();
+      } catch (_) {}
+    }
 
-    if (service.currentAdmin?.isSuperAdmin == true) {
+    if (refreshAdmins && service.currentAdmin?.isSuperAdmin == true) {
       try {
         final admins = await service.fetchAdmins();
         nextAdminCount = admins.length;
+      } catch (_) {}
+    }
+
+    var nextRequestAnalytics = _requestAnalytics;
+    if (refreshRequestAnalytics) {
+      try {
+        nextRequestAnalytics = await service.fetchRequestAnalytics();
       } catch (_) {}
     }
 
@@ -243,6 +290,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     if (!mounted) return;
     setState(() {
+      _dashboardUsers = users;
+      _dashboardDevices = devices;
+      _dashboardRevenue = revenue;
+      _dashboardErrors = errors;
+      _dashboardActivities = activities;
+      _requestAnalytics = nextRequestAnalytics;
       stats = nextStats;
       chartData = nextChartData;
       recentActivities = nextActivities;
@@ -275,7 +328,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       _adminSocket = socket;
       socket.listen(
         (message) {
-          if (_isDashboardUpdate(message)) _scheduleLiveReload();
+          final refresh = _dashboardRefreshForSocketMessage(message);
+          if (refresh != null) _scheduleLiveReload(refresh);
         },
         onDone: () {
           if (mounted) {
@@ -290,23 +344,78 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     }).catchError((_) {});
   }
 
-  bool _isDashboardUpdate(dynamic message) {
+  _DashboardRefreshRequest? _dashboardRefreshForSocketMessage(dynamic message) {
     try {
       final decoded = jsonDecode(message.toString()) as Map<String, dynamic>;
       final type = decoded['type']?.toString();
-      return type == 'ADMIN_DASHBOARD_UPDATED' ||
-          type == 'ADMIN_WS_CONNECTED' ||
-          type == 'DEVICE_WS_CONNECTED';
+      if (type == 'ADMIN_WS_CONNECTED') {
+        return const _DashboardRefreshRequest.full();
+      }
+      if (type == 'DEVICE_WS_CONNECTED') {
+        return const _DashboardRefreshRequest.devices();
+      }
+      if (type != 'ADMIN_DASHBOARD_UPDATED') return null;
+
+      final data = decoded['data'] is Map<String, dynamic>
+          ? decoded['data'] as Map<String, dynamic>
+          : const <String, dynamic>{};
+      final eventType = data['eventType']?.toString();
+      switch (eventType) {
+        case 'APP_ERROR_CREATED':
+          return const _DashboardRefreshRequest(
+            errors: true,
+            activities: true,
+          );
+        case 'USER_REGISTERED':
+          return const _DashboardRefreshRequest(
+            userSummary: true,
+            users: true,
+            activities: true,
+          );
+        case 'BUSINESS_LINKED':
+          return const _DashboardRefreshRequest(
+            userSummary: true,
+            users: true,
+            devices: true,
+            activities: true,
+          );
+        case 'BUSINESS_PLAN_EXTENDED':
+        case 'BUSINESS_PLAN_OFFER_SENT':
+          return const _DashboardRefreshRequest(
+            users: true,
+            revenue: true,
+            activities: true,
+          );
+        case 'SUBSCRIPTION_PLANS_UPDATED':
+          return const _DashboardRefreshRequest.none();
+        default:
+          return const _DashboardRefreshRequest.full();
+      }
     } catch (_) {
-      return false;
+      return null;
     }
   }
 
-  void _scheduleLiveReload() {
+  void _scheduleLiveReload(_DashboardRefreshRequest refresh) {
+    if (!refresh.hasWork) return;
+    _pendingLiveRefresh = _pendingLiveRefresh.merge(refresh);
     _liveReloadDebounce?.cancel();
     _liveReloadDebounce = Timer(
       const Duration(milliseconds: 400),
-      () => unawaited(_loadDashboardData()),
+      () {
+        final pendingRefresh = _pendingLiveRefresh;
+        _pendingLiveRefresh = const _DashboardRefreshRequest.none();
+        unawaited(_loadDashboardData(
+          refreshUserSummary: pendingRefresh.userSummary,
+          refreshUsers: pendingRefresh.users,
+          refreshDevices: pendingRefresh.devices,
+          refreshRevenue: pendingRefresh.revenue,
+          refreshErrors: pendingRefresh.errors,
+          refreshActivities: pendingRefresh.activities,
+          refreshAdmins: pendingRefresh.admins,
+          refreshRequestAnalytics: pendingRefresh.requestAnalytics,
+        ));
+      },
     );
   }
 
@@ -859,6 +968,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _animatedCard(
+                        4,
+                        StatCard(
+                          title: 'Requests',
+                          value: AppUtils.formatNumber(
+                              _requestAnalytics.totalRequests),
+                          subtitle: 'Total till now',
+                          growth: 0,
+                          gradientColors: const [
+                            AppColors.info,
+                            AppColors.accent
+                          ],
+                          icon: Icons.route_rounded,
+                          onTap: () => _navigate(
+                            context,
+                            _RequestAnalyticsScreen(
+                              analytics: _requestAnalytics,
+                              customers: _dashboardUsers,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 if (showAdminTile) ...[
                   const SizedBox(height: 14),
                   Row(
@@ -866,6 +1004,76 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                       Expanded(
                         child: _animatedCard(
                           4,
+                          StatCard(
+                            title: 'Plans',
+                            value: '3',
+                            subtitle: 'Manage prices',
+                            growth: 0,
+                            gradientColors: const [
+                              AppColors.info,
+                              AppColors.accent
+                            ],
+                            icon: Icons.workspace_premium_rounded,
+                            onTap: () =>
+                                _navigate(context, const _PlansAdminScreen()),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _animatedCard(
+                          5,
+                          StatCard(
+                            title: 'Notifications',
+                            value: AppUtils.formatNumber(
+                                _dashboardUsers
+                                    .where((user) => user.businessId != null)
+                                    .length),
+                            subtitle: 'Send app messages',
+                            growth: 0,
+                            gradientColors: const [
+                              AppColors.accent,
+                              AppColors.success
+                            ],
+                            icon: Icons.notifications_active_rounded,
+                            onTap: () => _navigate(
+                              context,
+                              const NotificationsScreen(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _animatedCard(
+                          6,
+                          StatCard(
+                            title: 'Admins',
+                            value: AppUtils.formatNumber(adminCount),
+                            subtitle: 'Manage admin access',
+                            growth: 0,
+                            gradientColors: const [
+                              AppColors.info,
+                              AppColors.accent
+                            ],
+                            icon: Icons.admin_panel_settings_rounded,
+                            onTap: () =>
+                                _navigate(context, const AdminsScreen()),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _animatedCard(
+                          6,
                           StatCard(
                             title: 'Converted Customers',
                             value: AppUtils.formatNumber(
@@ -889,7 +1097,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                       const SizedBox(width: 14),
                       Expanded(
                         child: _animatedCard(
-                          5,
+                          7,
                           StatCard(
                             title: 'Converted Risk',
                             value: AppUtils.formatNumber(
@@ -917,7 +1125,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     children: [
                       Expanded(
                         child: _animatedCard(
-                          6,
+                          8,
                           StatCard(
                             title: 'Plan Upgraded Customers',
                             value: AppUtils.formatNumber(
@@ -941,28 +1149,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _animatedCard(
-                          7,
-                          StatCard(
-                            title: 'Admins',
-                            value: AppUtils.formatNumber(adminCount),
-                            subtitle: 'Manage admin access',
-                            growth: 0,
-                            gradientColors: const [
-                              AppColors.info,
-                              AppColors.accent
-                            ],
-                            icon: Icons.admin_panel_settings_rounded,
-                            onTap: () =>
-                                _navigate(context, const AdminsScreen()),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
                 const SizedBox(height: 28),
                 // At Risk Section
@@ -1830,6 +2016,839 @@ class _PlanUpgradeCustomersScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RequestAnalyticsScreen extends ConsumerStatefulWidget {
+  final RequestAnalytics analytics;
+  final List<Customer> customers;
+
+  const _RequestAnalyticsScreen({
+    required this.analytics,
+    required this.customers,
+  });
+
+  @override
+  ConsumerState<_RequestAnalyticsScreen> createState() =>
+      _RequestAnalyticsScreenState();
+}
+
+class _RequestAnalyticsScreenState
+    extends ConsumerState<_RequestAnalyticsScreen> {
+  late RequestAnalytics _analytics = widget.analytics;
+  late List<Customer> _customers = widget.customers;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refresh());
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    try {
+      final service = ref.read(adminAuthServiceProvider);
+      final analytics = await service.fetchRequestAnalytics();
+      var customers = _customers;
+      try {
+        customers = await service.fetchUsers();
+        final dangerousUserIds = analytics.dangerousUsers
+            .map(_requestUserId)
+            .whereType<String>()
+            .toSet();
+        final dangerousCustomers = customers
+            .where((customer) => dangerousUserIds.contains(customer.id))
+            .toList();
+        final detailedCustomers = await Future.wait(
+          dangerousCustomers.map((customer) => _safeCustomerDetails(customer)),
+        );
+        final detailsById = {
+          for (final customer in detailedCustomers) customer.id: customer,
+        };
+        customers = customers
+            .map((customer) => detailsById[customer.id] ?? customer)
+            .toList();
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _analytics = analytics;
+        _customers = customers;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<Customer> _safeCustomerDetails(Customer customer) async {
+    try {
+      return await ref
+          .read(adminAuthServiceProvider)
+          .fetchCustomerDetails(customer);
+    } catch (_) {
+      return customer;
+    }
+  }
+
+  String? _requestUserId(DangerousRequestUser user) {
+    if (!user.id.startsWith('user:')) return null;
+    return user.id.substring('user:'.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AppColors.textPrimary : AppColors.textDark;
+    final analytics = _analytics;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Requests'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _refresh,
+            icon: _loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          FxCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.info.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.route_rounded,
+                        color: AppColors.info,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Total Requests',
+                            style: TextStyle(
+                              color: titleColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${AppUtils.formatNumber(analytics.totalRequests)} till now',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (analytics.generatedAt != null)
+                      Text(
+                        AppUtils.timeAgo(analytics.generatedAt!),
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _RequestPeriodSection(
+                  title: 'Current Day',
+                  period: analytics.currentDay,
+                  color: AppColors.info,
+                ),
+                const SizedBox(height: 14),
+                _RequestPeriodSection(
+                  title: 'Current Month',
+                  period: analytics.currentMonth,
+                  color: AppColors.accent,
+                ),
+                const SizedBox(height: 14),
+                _RequestPeriodSection(
+                  title: 'Current Year',
+                  period: analytics.currentYear,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(height: 14),
+                _DangerousUsersSection(
+                  users: analytics.dangerousUsers,
+                  customers: _customers,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestPeriodSection extends StatelessWidget {
+  final String title;
+  final RequestAnalyticsPeriod period;
+  final Color color;
+
+  const _RequestPeriodSection({
+    required this.title,
+    required this.period,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final endpoints = period.endpoints;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.10 : 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                period.bucket.isEmpty ? 'No bucket' : period.bucket,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (endpoints.isEmpty)
+            const Text(
+              'No requests recorded',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            )
+          else
+            ...endpoints.map(
+              (endpoint) => _RequestMetricRow(
+                label: endpoint.endpoint,
+                count: endpoint.count,
+                color: color,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DangerousUsersSection extends StatelessWidget {
+  final List<DangerousRequestUser> users;
+  final List<Customer> customers;
+
+  const _DangerousUsersSection({
+    required this.users,
+    required this.customers,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.error.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Top 5 Dangerous Users',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (users.isEmpty)
+            const Text(
+              'No high request users recorded',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            )
+          else
+            ...users.asMap().entries.map(
+                  (entry) => _DangerousUserRow(
+                    rank: entry.key + 1,
+                    user: entry.value,
+                    customer: _customerFor(entry.value),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  Customer? _customerFor(DangerousRequestUser user) {
+    if (!user.id.startsWith('user:')) return null;
+    final userId = user.id.substring('user:'.length);
+    for (final customer in customers) {
+      if (customer.id == userId) return customer;
+    }
+    return null;
+  }
+}
+
+class _RequestMetricRow extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+
+  const _RequestMetricRow({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              AppUtils.formatNumber(count),
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DangerousUserRow extends StatelessWidget {
+  final int rank;
+  final DangerousRequestUser user;
+  final Customer? customer;
+
+  const _DangerousUserRow({
+    required this.rank,
+    required this.user,
+    this.customer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _displayName;
+    final subtitle = _subtitle;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.error.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              rank.toString(),
+              style: const TextStyle(
+                color: AppColors.error,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            AppUtils.formatNumber(user.today),
+            style: const TextStyle(
+              color: AppColors.error,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String get _displayName {
+    final name = customer?.name.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return user.label;
+  }
+
+  String get _subtitle {
+    final businessName = customer?.businessName.trim();
+    final requests = '${AppUtils.formatNumber(user.month)} this month';
+    if (businessName != null &&
+        businessName.isNotEmpty &&
+        businessName != 'No business linked') {
+      return '$businessName - $requests';
+    }
+    return '${user.role} - $requests';
+  }
+}
+
+class _PlansAdminScreen extends ConsumerStatefulWidget {
+  const _PlansAdminScreen();
+
+  @override
+  ConsumerState<_PlansAdminScreen> createState() => _PlansAdminScreenState();
+}
+
+class _PlansAdminScreenState extends ConsumerState<_PlansAdminScreen> {
+  final _priceCtrls = <String, TextEditingController>{};
+  final _discountCtrls = <String, TextEditingController>{};
+  final _discountNameCtrl = TextEditingController();
+  DateTime? _discountEndsAt;
+  List<ManagedPlan> _plans = const [];
+  bool _loading = true;
+  bool _savingPrices = false;
+  bool _savingDiscount = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlans();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _priceCtrls.values) {
+      controller.dispose();
+    }
+    for (final controller in _discountCtrls.values) {
+      controller.dispose();
+    }
+    _discountNameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPlans() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final plans =
+          await ref.read(adminAuthServiceProvider).fetchManagedPlans();
+      if (!mounted) return;
+      _setPlans(plans);
+      setState(() => _loading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _cleanError(e);
+      });
+    }
+  }
+
+  void _setPlans(List<ManagedPlan> plans) {
+    _plans = plans;
+    for (final plan in _editablePlans) {
+      _priceCtrls.putIfAbsent(plan.id, () => TextEditingController()).text =
+          plan.amount.toStringAsFixed(0);
+      _discountCtrls.putIfAbsent(plan.id, () => TextEditingController()).text =
+          (plan.discountAmount ?? plan.amount).toStringAsFixed(0);
+    }
+    final firstDiscounted = _editablePlans
+        .where((plan) => plan.discountName != null)
+        .cast<ManagedPlan?>()
+        .firstWhere((plan) => plan != null, orElse: () => null);
+    _discountNameCtrl.text = firstDiscounted?.discountName ?? '';
+    _discountEndsAt = firstDiscounted?.discountEndsAt;
+  }
+
+  List<ManagedPlan> get _editablePlans =>
+      _plans.where((plan) => plan.id != 'trial').toList();
+
+  Future<void> _savePrices() async {
+    final prices = _readPrices(_priceCtrls);
+    if (prices == null) {
+      _showSnack('Enter a valid price for every plan', AppColors.error);
+      return;
+    }
+    setState(() => _savingPrices = true);
+    try {
+      final plans = await ref
+          .read(adminAuthServiceProvider)
+          .updateManagedPlanPrices(prices);
+      if (!mounted) return;
+      setState(() {
+        _setPlans(plans);
+        _savingPrices = false;
+      });
+      _showSnack('Plan prices updated', AppColors.success);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingPrices = false);
+      _showSnack(_cleanError(e), AppColors.error);
+    }
+  }
+
+  Future<void> _saveDiscount() async {
+    final prices = _readPrices(_discountCtrls);
+    if (_discountNameCtrl.text.trim().isEmpty) {
+      _showSnack('Enter a discount name', AppColors.error);
+      return;
+    }
+    if (_discountEndsAt == null) {
+      _showSnack('Choose a discount end date', AppColors.error);
+      return;
+    }
+    if (prices == null) {
+      _showSnack(
+          'Enter a valid discounted price for every plan', AppColors.error);
+      return;
+    }
+    setState(() => _savingDiscount = true);
+    try {
+      final plans =
+          await ref.read(adminAuthServiceProvider).updateManagedPlanDiscount(
+                name: _discountNameCtrl.text.trim(),
+                validUntil: _discountEndsAt!,
+                prices: prices,
+              );
+      if (!mounted) return;
+      setState(() {
+        _setPlans(plans);
+        _savingDiscount = false;
+      });
+      _showSnack('Plan discount saved', AppColors.success);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingDiscount = false);
+      _showSnack(_cleanError(e), AppColors.error);
+    }
+  }
+
+  Map<String, double>? _readPrices(Map<String, TextEditingController> ctrls) {
+    final prices = <String, double>{};
+    for (final plan in _editablePlans) {
+      final amount = double.tryParse(ctrls[plan.id]?.text.trim() ?? '');
+      if (amount == null || amount < 0) return null;
+      prices[plan.id] = amount;
+    }
+    return prices;
+  }
+
+  Future<void> _pickDiscountDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _discountEndsAt ?? now.add(const Duration(days: 7)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked == null) return;
+    setState(() => _discountEndsAt = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          23,
+          59,
+          59,
+        ));
+  }
+
+  void _showSnack(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  String _cleanError(Object error) {
+    final text = error.toString();
+    return text.startsWith('Exception: ') ? text.substring(11) : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? AppColors.darkBg : AppColors.lightBg;
+
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        title: const Text('Plans'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _loadPlans,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: _loadPlans,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                  children: [
+                    const SectionHeader(title: 'PLAN PRICES'),
+                    const SizedBox(height: 12),
+                    ..._editablePlans.map(
+                      (plan) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ManagedPlanCard(
+                          plan: plan,
+                          priceCtrl: _priceCtrls[plan.id]!,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _savingPrices ? null : _savePrices,
+                        icon: _savingPrices
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: const Text('Save Prices'),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    const SectionHeader(title: 'DISCOUNT'),
+                    const SizedBox(height: 12),
+                    FxCard(
+                      child: Column(
+                        children: [
+                          TextField(
+                            controller: _discountNameCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Discount name',
+                              prefixIcon: Icon(Icons.local_offer_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ..._editablePlans.map(
+                            (plan) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: TextField(
+                                controller: _discountCtrls[plan.id],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: InputDecoration(
+                                  labelText: '${plan.name} discounted price',
+                                  prefixIcon:
+                                      const Icon(Icons.currency_rupee_rounded),
+                                ),
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: _pickDiscountDate,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Last discount date',
+                                prefixIcon: Icon(Icons.event_rounded),
+                              ),
+                              child: Text(
+                                _discountEndsAt == null
+                                    ? 'Choose date'
+                                    : AppUtils.formatDate(_discountEndsAt!),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _savingDiscount ? null : _saveDiscount,
+                              icon: _savingDiscount
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.sell_rounded),
+                              label: const Text('Save Discount'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+    );
+  }
+}
+
+class _ManagedPlanCard extends StatelessWidget {
+  final ManagedPlan plan;
+  final TextEditingController priceCtrl;
+
+  const _ManagedPlanCard({required this.plan, required this.priceCtrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return FxCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  plan.name,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              StatusBadge(plan.tvRangeLabel),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            plan.summary,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (plan.hasActiveDiscount) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${plan.discountName} until ${AppUtils.formatDate(plan.discountEndsAt!)}',
+              style: const TextStyle(
+                color: AppColors.success,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: priceCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Plan price',
+              prefixIcon: Icon(Icons.currency_rupee_rounded),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2979,6 +3998,67 @@ class _RiskCustomerCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DashboardRefreshRequest {
+  const _DashboardRefreshRequest({
+    this.userSummary = false,
+    this.users = false,
+    this.devices = false,
+    this.revenue = false,
+    this.errors = false,
+    this.activities = false,
+    this.admins = false,
+    this.requestAnalytics = false,
+  });
+
+  const _DashboardRefreshRequest.none() : this();
+
+  const _DashboardRefreshRequest.full()
+      : this(
+          userSummary: true,
+          users: true,
+          devices: true,
+          revenue: true,
+          errors: true,
+          activities: true,
+          admins: true,
+          requestAnalytics: true,
+        );
+
+  const _DashboardRefreshRequest.devices() : this(devices: true);
+
+  final bool userSummary;
+  final bool users;
+  final bool devices;
+  final bool revenue;
+  final bool errors;
+  final bool activities;
+  final bool admins;
+  final bool requestAnalytics;
+
+  bool get hasWork =>
+      userSummary ||
+      users ||
+      devices ||
+      revenue ||
+      errors ||
+      activities ||
+      admins ||
+      requestAnalytics;
+
+  _DashboardRefreshRequest merge(_DashboardRefreshRequest other) {
+    return _DashboardRefreshRequest(
+      userSummary: userSummary || other.userSummary,
+      users: users || other.users,
+      devices: devices || other.devices,
+      revenue: revenue || other.revenue,
+      errors: errors || other.errors,
+      activities: activities || other.activities,
+      admins: admins || other.admins,
+      requestAnalytics: requestAnalytics || other.requestAnalytics,
     );
   }
 }
