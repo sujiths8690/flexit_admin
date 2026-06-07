@@ -254,6 +254,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       _buildLabel('Email address', isDark),
                       const SizedBox(height: 8),
                       TextField(
+                        key: const ValueKey('admin-login-email'),
                         controller: _emailCtrl,
                         keyboardType: TextInputType.emailAddress,
                         autocorrect: false,
@@ -274,6 +275,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       _buildLabel('Password', isDark),
                       const SizedBox(height: 8),
                       TextField(
+                        key: const ValueKey('admin-login-password'),
                         controller: _passCtrl,
                         obscureText: _obscurePass,
                         style: const TextStyle(fontSize: 15),
@@ -349,6 +351,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 ),
                               )
                             : ElevatedButton(
+                                key: const ValueKey('admin-login-submit'),
                                 onPressed: _login,
                                 child: const Text('Sign in'),
                               ),

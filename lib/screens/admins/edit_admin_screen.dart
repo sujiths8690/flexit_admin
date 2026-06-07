@@ -104,17 +104,20 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
               title: 'Admin Details',
               children: [
                 _field(
+                  key: const ValueKey('edit-admin-first-name'),
                   controller: _firstNameCtrl,
                   label: 'First Name',
                   icon: Icons.person_outline_rounded,
                   validator: _required,
                 ),
                 _field(
+                  key: const ValueKey('edit-admin-last-name'),
                   controller: _lastNameCtrl,
                   label: 'Last Name',
                   icon: Icons.badge_outlined,
                 ),
                 _field(
+                  key: const ValueKey('edit-admin-mobile'),
                   controller: _mobileCtrl,
                   label: 'Mobile Number',
                   icon: Icons.phone_rounded,
@@ -124,6 +127,7 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
                   ],
                 ),
                 _field(
+                  key: const ValueKey('edit-admin-email'),
                   controller: _emailCtrl,
                   label: 'Email ID',
                   icon: Icons.alternate_email_rounded,
@@ -131,6 +135,7 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
                   validator: _email,
                 ),
                 _field(
+                  key: const ValueKey('edit-admin-age'),
                   controller: _ageCtrl,
                   label: 'Age',
                   icon: Icons.cake_outlined,
@@ -139,6 +144,7 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
                   validator: _age,
                 ),
                 _field(
+                  key: const ValueKey('edit-admin-address'),
                   controller: _addressCtrl,
                   label: 'Address',
                   icon: Icons.location_on_outlined,
@@ -148,6 +154,7 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
+              key: const ValueKey('edit-admin-submit'),
               onPressed: _isSaving ? null : _save,
               icon: _isSaving
                   ? SizedBox(
@@ -168,6 +175,7 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
   }
 
   Widget _field({
+    Key? key,
     required TextEditingController controller,
     required String label,
     required IconData icon,
@@ -179,6 +187,7 @@ class _EditAdminScreenState extends ConsumerState<EditAdminScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: TextFormField(
+        key: key,
         controller: controller,
         validator: validator,
         keyboardType: keyboardType,

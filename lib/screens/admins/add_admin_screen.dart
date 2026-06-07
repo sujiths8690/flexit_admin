@@ -93,17 +93,20 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
               title: 'Admin Details',
               children: [
                 _field(
+                  key: const ValueKey('add-admin-first-name'),
                   controller: _firstNameCtrl,
                   label: 'First Name',
                   icon: Icons.person_outline_rounded,
                   validator: _required,
                 ),
                 _field(
+                  key: const ValueKey('add-admin-last-name'),
                   controller: _lastNameCtrl,
                   label: 'Last Name',
                   icon: Icons.badge_outlined,
                 ),
                 _field(
+                  key: const ValueKey('add-admin-mobile'),
                   controller: _mobileCtrl,
                   label: 'Mobile Number',
                   icon: Icons.phone_rounded,
@@ -113,6 +116,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
                   ],
                 ),
                 _field(
+                  key: const ValueKey('add-admin-email'),
                   controller: _emailCtrl,
                   label: 'Email ID',
                   icon: Icons.alternate_email_rounded,
@@ -120,6 +124,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
                   validator: _email,
                 ),
                 _field(
+                  key: const ValueKey('add-admin-age'),
                   controller: _ageCtrl,
                   label: 'Age',
                   icon: Icons.cake_outlined,
@@ -128,6 +133,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
                   validator: _age,
                 ),
                 _field(
+                  key: const ValueKey('add-admin-address'),
                   controller: _addressCtrl,
                   label: 'Address',
                   icon: Icons.location_on_outlined,
@@ -140,6 +146,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
               title: 'Login',
               children: [
                 _field(
+                  key: const ValueKey('add-admin-password'),
                   controller: _passwordCtrl,
                   label: 'Password',
                   icon: Icons.lock_outline_rounded,
@@ -160,6 +167,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
+              key: const ValueKey('add-admin-submit'),
               onPressed: _isSaving ? null : _save,
               icon: _isSaving
                   ? SizedBox(
@@ -180,6 +188,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
   }
 
   Widget _field({
+    Key? key,
     required TextEditingController controller,
     required String label,
     required IconData icon,
@@ -193,6 +202,7 @@ class _AddAdminScreenState extends ConsumerState<AddAdminScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: TextFormField(
+        key: key,
         controller: controller,
         validator: validator,
         keyboardType: keyboardType,

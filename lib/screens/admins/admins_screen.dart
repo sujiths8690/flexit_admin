@@ -91,6 +91,7 @@ class _AdminsScreenState extends ConsumerState<AdminsScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: FxSearchBar(
+              key: const ValueKey('admins-search'),
               hint: 'Search by name, ID, email, mobile...',
               controller: _searchCtrl,
               onChanged: (_) => _loadAdmins(),
@@ -99,6 +100,7 @@ class _AdminsScreenState extends ConsumerState<AdminsScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        key: const ValueKey('admins-add'),
         onPressed: _openAddAdmin,
         backgroundColor: AppColors.accent,
         foregroundColor: Colors.white,
@@ -143,6 +145,7 @@ class _AdminTile extends StatelessWidget {
     final color = admin.isSuperAdmin ? AppColors.warning : AppColors.accent;
 
     return FxCard(
+      key: ValueKey('admin-tile-${admin.email}'),
       onTap: onTap,
       padding: const EdgeInsets.all(14),
       child: Row(

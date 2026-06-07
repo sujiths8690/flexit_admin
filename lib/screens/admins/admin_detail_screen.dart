@@ -211,6 +211,7 @@ class _AdminDetailScreenState extends ConsumerState<AdminDetailScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
+                      key: ValueKey('confirm-$confirmLabel'),
                       onPressed: () => Navigator.pop(context, true),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: color,
@@ -267,11 +268,13 @@ class _AdminDetailScreenState extends ConsumerState<AdminDetailScreen> {
               actions: [
                 if (!_admin.isSuperAdmin)
                   IconButton(
+                    key: const ValueKey('admin-detail-edit-icon'),
                     onPressed: _isLoading ? null : _editDetails,
                     icon: const Icon(Icons.edit_outlined),
                   ),
                 if (!_admin.isSuperAdmin)
                   IconButton(
+                    key: const ValueKey('admin-detail-delete-icon'),
                     onPressed: _isLoading ? null : _delete,
                     icon: const Icon(Icons.delete_outline_rounded),
                     color: AppColors.error,
@@ -415,6 +418,7 @@ class _AdminDetailScreenState extends ConsumerState<AdminDetailScreen> {
                       children: [
                         Expanded(
                           child: _actionButton(
+                            key: const ValueKey('admin-detail-edit'),
                             label: 'Edit Details',
                             icon: Icons.edit_outlined,
                             color: AppColors.info,
@@ -450,6 +454,7 @@ class _AdminDetailScreenState extends ConsumerState<AdminDetailScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: _actionButton(
+                            key: const ValueKey('admin-detail-delete'),
                             label: 'Delete Admin',
                             icon: Icons.delete_outline_rounded,
                             color: AppColors.error,
@@ -487,12 +492,14 @@ class _AdminDetailScreenState extends ConsumerState<AdminDetailScreen> {
   }
 
   Widget _actionButton({
+    Key? key,
     required String label,
     required IconData icon,
     required Color color,
     required VoidCallback? onTap,
   }) {
     return GestureDetector(
+      key: key,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),

@@ -93,6 +93,7 @@ class FxSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextField(
+      key: key,
       controller: controller,
       onChanged: onChanged,
       style: const TextStyle(fontSize: 14),
